@@ -1,0 +1,61 @@
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# ─── Node / React ─────────────────────────────────────────
+node_modules/
+dist/
+build/
+.next/
+out/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# ─── IDEs ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ─── OS ───────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V8
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ─── Database ─────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── Misc ─────────────────────────────────────────────────
+*.bak
+*.tmp
+coverage/
+.coverage
+htmlcov/

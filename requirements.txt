@@ -1,0 +1,10 @@
+# Root-level requirements pointer
+# Backend Python dependencies are listed in backend/requirements.txt
+#
+# To install backend dependencies:
+#   cd backend
+#   pip install -r requirements.txt
+#
+# Frontend dependencies are managed via npm:
+#   cd frontend
+#   npm install
