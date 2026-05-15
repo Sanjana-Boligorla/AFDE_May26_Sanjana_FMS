@@ -132,10 +132,23 @@ class SearchResponse(BaseModel):
 
 
 # ─── Dashboard schemas ────────────────────────────────────────
+class TopProgram(BaseModel):
+    program_name: str
+    count:        int
+    avg_rating:   float
+
+class TopTrainer(BaseModel):
+    trainer_name: str
+    count:        int
+    avg_rating:   float
+
 class DashboardStats(BaseModel):
-    total_feedback:       int
-    average_rating:       float
-    recommend_percentage: float
-    rating_distribution:  dict[str, int]
+    total_feedback:        int
+    average_rating:        float
+    recommend_percentage:  float
+    rating_distribution:   dict[str, int]
     category_distribution: dict[str, int]
-    recent_feedback:      list[FeedbackResponse]
+    department_distribution: dict[str, int]
+    top_programs:          list[TopProgram]
+    top_trainers:          list[TopTrainer]
+    recent_feedback:       list[FeedbackResponse]

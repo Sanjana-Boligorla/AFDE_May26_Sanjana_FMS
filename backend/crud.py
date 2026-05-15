@@ -172,6 +172,51 @@ def get_dashboard_stats(db: Session) -> dict:
     )
     category_dist: dict[str, int] = {row[0]: row[1] for row in category_rows}
 
+    # Department distribution
+    dept_rows = (
+        db.query(Feedback.department, func.count(Feedback.feedback_id))
+        .filter(Feedback.department.isnot(None))
+        .group_by(Feedback.department)
+        .order_by(desc(func.count(Feedback.feedback_id)))
+        .all()
+    )
+    dept_dist: dict[str, int] = {row[0]: row[1] for row in dept_rows}
+
+    # Top 5 programs by feedback count + avg rating
+    program_rows = (
+        db.query(
+            Feedback.program_name,
+            func.count(Feedback.feedback_id).label("count"),
+            func.avg(Feedback.rating).label("avg_rating"),
+        )
+        .group_by(Feedback.program_name)
+        .order_by(desc("count"))
+        .limit(5)
+        .all()
+    )
+    top_programs = [
+        {"program_name": r[0], "count": r[1], "avg_rating": round(float(r[2]), 1)}
+        for r in program_rows
+    ]
+
+    # Top 5 trainers by avg rating (min 1 feedback)
+    trainer_rows = (
+        db.query(
+            Feedback.trainer_name,
+            func.count(Feedback.feedback_id).label("count"),
+            func.avg(Feedback.rating).label("avg_rating"),
+        )
+        .filter(Feedback.trainer_name.isnot(None))
+        .group_by(Feedback.trainer_name)
+        .order_by(desc("avg_rating"))
+        .limit(5)
+        .all()
+    )
+    top_trainers = [
+        {"trainer_name": r[0], "count": r[1], "avg_rating": round(float(r[2]), 1)}
+        for r in trainer_rows
+    ]
+
     # Recent 5 entries
     recent = (
         db.query(Feedback)
@@ -181,10 +226,13 @@ def get_dashboard_stats(db: Session) -> dict:
     )
 
     return {
-        "total_feedback":        total,
-        "average_rating":        avg_rating,
-        "recommend_percentage":  recommend_pct,
-        "rating_distribution":   rating_dist,
-        "category_distribution": category_dist,
-        "recent_feedback":       recent,
+        "total_feedback":          total,
+        "average_rating":          avg_rating,
+        "recommend_percentage":    recommend_pct,
+        "rating_distribution":     rating_dist,
+        "category_distribution":   category_dist,
+        "department_distribution": dept_dist,
+        "top_programs":            top_programs,
+        "top_trainers":            top_trainers,
+        "recent_feedback":         recent,
     }
