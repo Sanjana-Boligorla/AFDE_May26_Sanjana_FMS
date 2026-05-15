@@ -2,8 +2,7 @@
 routers/feedback.py
 -------------------
 All API routes for feedback management and the dashboard.
-Prefix  : /api
-Tags    : Feedback, Dashboard
+Prefix : /api
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from sqlalchemy.orm import Session
 import crud
 from database import get_db
 from schemas import (
+    CategoryEnum,
     DashboardStats,
     FeedbackCreate,
     FeedbackListResponse,
@@ -38,18 +38,11 @@ router = APIRouter()
     tags=["Dashboard"],
 )
 def get_dashboard_stats(db: Session = Depends(get_db)):
-    """
-    Returns aggregated statistics:
-    - Total feedback count
-    - Average rating (rounded to 2 d.p.)
-    - Rating distribution (count per star level)
-    - 5 most recent feedback entries
-    """
     return crud.get_dashboard_stats(db)
 
 
 # ─────────────────────────────────────────────────────────────
-# SEARCH  (must be declared BEFORE /{feedback_id} to avoid conflict)
+# SEARCH  (declared before /{feedback_id} to avoid route conflict)
 # ─────────────────────────────────────────────────────────────
 
 @router.get(
@@ -59,14 +52,26 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     tags=["Feedback"],
 )
 def search_feedback(
-    q:            Optional[str] = Query(None, description="Keyword to search across name, program and comments"),
-    rating:       Optional[int] = Query(None, ge=1, le=5, description="Filter by exact rating"),
-    program_name: Optional[str] = Query(None, description="Filter by program name (partial match)"),
+    q:               Optional[str]          = Query(None),
+    rating:          Optional[int]          = Query(None, ge=1, le=5),
+    category:        Optional[CategoryEnum] = Query(None),
+    program_name:    Optional[str]          = Query(None),
+    trainer_name:    Optional[str]          = Query(None),
+    would_recommend: Optional[bool]         = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Dedicated search endpoint — supports keyword + rating + program_name filters."""
-    data  = crud.get_feedback_list(db, keyword=q, rating=rating, program_name=program_name, limit=200)
-    total = crud.count_feedback(db, keyword=q, rating=rating, program_name=program_name)
+    data  = crud.get_feedback_list(
+        db, limit=500,
+        keyword=q, rating=rating, category=category,
+        program_name=program_name, trainer_name=trainer_name,
+        would_recommend=would_recommend,
+    )
+    total = crud.count_feedback(
+        db,
+        keyword=q, rating=rating, category=category,
+        program_name=program_name, trainer_name=trainer_name,
+        would_recommend=would_recommend,
+    )
     return SearchResponse(total=total, data=data)
 
 
@@ -77,20 +82,32 @@ def search_feedback(
 @router.get(
     "/feedback",
     response_model=FeedbackListResponse,
-    summary="List all feedback with optional filters",
+    summary="List all feedback with optional filters and pagination",
     tags=["Feedback"],
 )
 def list_feedback(
-    skip:         int           = Query(0,    ge=0,  description="Pagination offset"),
-    limit:        int           = Query(10,   ge=1, le=100, description="Records per page"),
-    keyword:      Optional[str] = Query(None, description="Keyword search"),
-    rating:       Optional[int] = Query(None, ge=1, le=5,  description="Filter by rating"),
-    program_name: Optional[str] = Query(None, description="Filter by program name"),
+    skip:            int                    = Query(0,   ge=0),
+    limit:           int                    = Query(10,  ge=1, le=100),
+    keyword:         Optional[str]          = Query(None),
+    rating:          Optional[int]          = Query(None, ge=1, le=5),
+    category:        Optional[CategoryEnum] = Query(None),
+    program_name:    Optional[str]          = Query(None),
+    trainer_name:    Optional[str]          = Query(None),
+    would_recommend: Optional[bool]         = Query(None),
     db: Session = Depends(get_db),
 ):
-    data  = crud.get_feedback_list(db, skip=skip, limit=limit,
-                                   keyword=keyword, rating=rating, program_name=program_name)
-    total = crud.count_feedback(db, keyword=keyword, rating=rating, program_name=program_name)
+    data  = crud.get_feedback_list(
+        db, skip=skip, limit=limit,
+        keyword=keyword, rating=rating, category=category,
+        program_name=program_name, trainer_name=trainer_name,
+        would_recommend=would_recommend,
+    )
+    total = crud.count_feedback(
+        db,
+        keyword=keyword, rating=rating, category=category,
+        program_name=program_name, trainer_name=trainer_name,
+        would_recommend=would_recommend,
+    )
     return FeedbackListResponse(total=total, skip=skip, limit=limit, data=data)
 
 
@@ -108,7 +125,7 @@ def create_feedback(payload: FeedbackCreate, db: Session = Depends(get_db)):
 @router.get(
     "/feedback/{feedback_id}",
     response_model=FeedbackResponse,
-    summary="Get a single feedback entry",
+    summary="Get a single feedback entry by ID",
     tags=["Feedback"],
 )
 def get_feedback(feedback_id: int, db: Session = Depends(get_db)):
@@ -116,7 +133,7 @@ def get_feedback(feedback_id: int, db: Session = Depends(get_db)):
     if obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Feedback with id={feedback_id} not found.",
+            detail="Feedback with id=" + str(feedback_id) + " not found.",
         )
     return obj
 
@@ -136,7 +153,7 @@ def update_feedback(
     if obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Feedback with id={feedback_id} not found.",
+            detail="Feedback with id=" + str(feedback_id) + " not found.",
         )
     return obj
 
@@ -152,6 +169,6 @@ def delete_feedback(feedback_id: int, db: Session = Depends(get_db)):
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Feedback with id={feedback_id} not found.",
+            detail="Feedback with id=" + str(feedback_id) + " not found.",
         )
-    return {"message": f"Feedback id={feedback_id} deleted successfully."}
+    return {"message": "Feedback id=" + str(feedback_id) + " deleted successfully."}

@@ -37,38 +37,46 @@ def get_feedback_by_id(db: Session, feedback_id: int) -> Optional[Feedback]:
 
 
 # ─── READ (list with filters) ────────────────────────────────
+def _apply_filters(query, keyword, rating, category, program_name, trainer_name, would_recommend):
+    """Apply all optional filters to a query — reused by list and count functions."""
+    if keyword:
+        pattern = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                Feedback.participant_name.ilike(pattern),
+                Feedback.email.ilike(pattern),
+                Feedback.department.ilike(pattern),
+                Feedback.program_name.ilike(pattern),
+                Feedback.trainer_name.ilike(pattern),
+                Feedback.comments.ilike(pattern),
+            )
+        )
+    if rating is not None:
+        query = query.filter(Feedback.rating == rating)
+    if category:
+        query = query.filter(Feedback.category == category)
+    if program_name:
+        query = query.filter(Feedback.program_name.ilike(f"%{program_name}%"))
+    if trainer_name:
+        query = query.filter(Feedback.trainer_name.ilike(f"%{trainer_name}%"))
+    if would_recommend is not None:
+        query = query.filter(Feedback.would_recommend == would_recommend)
+    return query
+
+
 def get_feedback_list(
     db: Session,
     skip: int = 0,
     limit: int = 10,
     keyword: Optional[str] = None,
     rating: Optional[int] = None,
+    category: Optional[str] = None,
     program_name: Optional[str] = None,
+    trainer_name: Optional[str] = None,
+    would_recommend: Optional[bool] = None,
 ) -> list[Feedback]:
-    """
-    Fetch paginated feedback records with optional filters:
-    - keyword  : partial match against participant_name, program_name, comments
-    - rating   : exact match
-    - program_name: partial match against program_name
-    """
     query = db.query(Feedback)
-
-    if keyword:
-        pattern = f"%{keyword}%"
-        query = query.filter(
-            or_(
-                Feedback.participant_name.ilike(pattern),
-                Feedback.program_name.ilike(pattern),
-                Feedback.comments.ilike(pattern),
-            )
-        )
-
-    if rating is not None:
-        query = query.filter(Feedback.rating == rating)
-
-    if program_name:
-        query = query.filter(Feedback.program_name.ilike(f"%{program_name}%"))
-
+    query = _apply_filters(query, keyword, rating, category, program_name, trainer_name, would_recommend)
     return (
         query.order_by(desc(Feedback.submitted_at))
         .offset(skip)
@@ -81,27 +89,13 @@ def count_feedback(
     db: Session,
     keyword: Optional[str] = None,
     rating: Optional[int] = None,
+    category: Optional[str] = None,
     program_name: Optional[str] = None,
+    trainer_name: Optional[str] = None,
+    would_recommend: Optional[bool] = None,
 ) -> int:
-    """Return the total number of records matching the given filters."""
     query = db.query(func.count(Feedback.feedback_id))
-
-    if keyword:
-        pattern = f"%{keyword}%"
-        query = query.filter(
-            or_(
-                Feedback.participant_name.ilike(pattern),
-                Feedback.program_name.ilike(pattern),
-                Feedback.comments.ilike(pattern),
-            )
-        )
-
-    if rating is not None:
-        query = query.filter(Feedback.rating == rating)
-
-    if program_name:
-        query = query.filter(Feedback.program_name.ilike(f"%{program_name}%"))
-
+    query = _apply_filters(query, keyword, rating, category, program_name, trainer_name, would_recommend)
     return query.scalar() or 0
 
 
@@ -111,16 +105,12 @@ def update_feedback(
     feedback_id: int,
     payload: FeedbackUpdate,
 ) -> Optional[Feedback]:
-    """
-    Update only the fields provided in the payload (partial update).
-    Returns None if the record does not exist.
-    """
+    """Partially update a feedback record. Returns None if not found."""
     db_obj = get_feedback_by_id(db, feedback_id)
     if db_obj is None:
         return None
 
-    update_data = payload.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
+    for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(db_obj, field, value)
 
     db.commit()
@@ -130,14 +120,10 @@ def update_feedback(
 
 # ─── DELETE ──────────────────────────────────────────────────
 def delete_feedback(db: Session, feedback_id: int) -> bool:
-    """
-    Delete a feedback record.
-    Returns True on success, False if the record was not found.
-    """
+    """Delete a feedback record. Returns True on success, False if not found."""
     db_obj = get_feedback_by_id(db, feedback_id)
     if db_obj is None:
         return False
-
     db.delete(db_obj)
     db.commit()
     return True
@@ -146,17 +132,29 @@ def delete_feedback(db: Session, feedback_id: int) -> bool:
 # ─── DASHBOARD STATS ─────────────────────────────────────────
 def get_dashboard_stats(db: Session) -> dict:
     """
-    Aggregate statistics for the dashboard:
+    Aggregated statistics for the dashboard:
     - total_feedback
-    - average_rating  (rounded to 2 decimal places)
-    - rating_distribution  (count per rating 1–5)
-    - recent_feedback  (latest 5 entries)
+    - average_rating
+    - recommend_percentage
+    - rating_distribution  (count per star 1–5)
+    - category_distribution (count per category)
+    - recent_feedback (latest 5 entries)
     """
-    total = db.query(func.count(Feedback.feedback_id)).scalar() or 0
-    avg   = db.query(func.avg(Feedback.rating)).scalar()
-    avg_rating = round(float(avg), 2) if avg is not None else 0.0
+    total     = db.query(func.count(Feedback.feedback_id)).scalar() or 0
+    avg_raw   = db.query(func.avg(Feedback.rating)).scalar()
+    avg_rating = round(float(avg_raw), 2) if avg_raw is not None else 0.0
 
-    distribution: dict[str, int] = {}
+    # Recommendation rate
+    recommend_count = (
+        db.query(func.count(Feedback.feedback_id))
+        .filter(Feedback.would_recommend == True)   # noqa: E712
+        .scalar()
+        or 0
+    )
+    recommend_pct = round((recommend_count / total * 100), 1) if total > 0 else 0.0
+
+    # Rating distribution
+    rating_dist: dict[str, int] = {}
     for i in range(1, 6):
         cnt = (
             db.query(func.count(Feedback.feedback_id))
@@ -164,8 +162,17 @@ def get_dashboard_stats(db: Session) -> dict:
             .scalar()
             or 0
         )
-        distribution[str(i)] = cnt
+        rating_dist[str(i)] = cnt
 
+    # Category distribution
+    category_rows = (
+        db.query(Feedback.category, func.count(Feedback.feedback_id))
+        .group_by(Feedback.category)
+        .all()
+    )
+    category_dist: dict[str, int] = {row[0]: row[1] for row in category_rows}
+
+    # Recent 5 entries
     recent = (
         db.query(Feedback)
         .order_by(desc(Feedback.submitted_at))
@@ -174,8 +181,10 @@ def get_dashboard_stats(db: Session) -> dict:
     )
 
     return {
-        "total_feedback":      total,
-        "average_rating":      avg_rating,
-        "rating_distribution": distribution,
-        "recent_feedback":     recent,
+        "total_feedback":        total,
+        "average_rating":        avg_rating,
+        "recommend_percentage":  recommend_pct,
+        "rating_distribution":   rating_dist,
+        "category_distribution": category_dist,
+        "recent_feedback":       recent,
     }

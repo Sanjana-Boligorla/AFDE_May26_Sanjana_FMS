@@ -6,10 +6,20 @@ Pydantic v2 schemas for request validation and response serialization.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+# ─── Enums ───────────────────────────────────────────────────
+class CategoryEnum(str, Enum):
+    training = "Training"
+    product  = "Product"
+    event    = "Event"
+    service  = "Service"
+    other    = "Other"
 
 
 # ─── Rating label helper ──────────────────────────────────────
@@ -24,38 +34,66 @@ RATING_LABELS: dict[int, str] = {
 
 # ─── Request schemas ──────────────────────────────────────────
 class FeedbackCreate(BaseModel):
+    # Participant
     participant_name: str = Field(
-        ...,
-        min_length=1,
-        max_length=255,
+        ..., min_length=1, max_length=255,
         examples=["Alice Johnson"],
     )
+    email: Optional[EmailStr] = Field(
+        default=None,
+        examples=["alice.j@example.com"],
+    )
+    department: Optional[str] = Field(
+        default=None, max_length=255,
+        examples=["Engineering"],
+    )
+
+    # Program
     program_name: str = Field(
-        ...,
-        min_length=1,
-        max_length=255,
+        ..., min_length=1, max_length=255,
         examples=["Python for Data Engineering"],
     )
+    category: CategoryEnum = Field(
+        default=CategoryEnum.training,
+        examples=["Training"],
+    )
+    trainer_name: Optional[str] = Field(
+        default=None, max_length=255,
+        examples=["Dr. Ramesh Kumar"],
+    )
+    session_date: Optional[date] = Field(
+        default=None,
+        examples=["2025-07-01"],
+    )
+
+    # Feedback
     rating: int = Field(
-        ...,
-        ge=1,
-        le=5,
-        description="Rating from 1 (Poor) to 5 (Excellent)",
+        ..., ge=1, le=5,
+        description="1 = Poor | 2 = Fair | 3 = Good | 4 = Very Good | 5 = Excellent",
     )
     comments: Optional[str] = Field(
-        default=None,
-        max_length=5000,
-        examples=["Great course, very hands-on!"],
+        default=None, max_length=5000,
+        examples=["Excellent hands-on training. Highly recommended!"],
+    )
+    would_recommend: bool = Field(
+        default=True,
+        description="Would the participant recommend this program?",
     )
 
 
 class FeedbackUpdate(BaseModel):
-    """All fields are optional — only provided fields are updated (PATCH semantics)."""
+    """All fields optional — only provided fields are updated."""
 
-    participant_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    program_name:     Optional[str] = Field(None, min_length=1, max_length=255)
-    rating:           Optional[int] = Field(None, ge=1, le=5)
-    comments:         Optional[str] = Field(None, max_length=5000)
+    participant_name: Optional[str]          = Field(None, min_length=1, max_length=255)
+    email:            Optional[EmailStr]     = None
+    department:       Optional[str]          = Field(None, max_length=255)
+    program_name:     Optional[str]          = Field(None, min_length=1, max_length=255)
+    category:         Optional[CategoryEnum] = None
+    trainer_name:     Optional[str]          = Field(None, max_length=255)
+    session_date:     Optional[date]         = None
+    rating:           Optional[int]          = Field(None, ge=1, le=5)
+    comments:         Optional[str]          = Field(None, max_length=5000)
+    would_recommend:  Optional[bool]         = None
 
 
 # ─── Response schemas ─────────────────────────────────────────
@@ -64,23 +102,28 @@ class FeedbackResponse(BaseModel):
 
     feedback_id:      int
     participant_name: str
+    email:            Optional[str]  = None
+    department:       Optional[str]  = None
     program_name:     str
+    category:         str
+    trainer_name:     Optional[str]  = None
+    session_date:     Optional[date] = None
     rating:           int
-    rating_label:     str = ""
-    comments:         Optional[str] = None
+    rating_label:     str            = ""
+    comments:         Optional[str]  = None
+    would_recommend:  bool
     submitted_at:     datetime
     updated_at:       Optional[datetime] = None
 
     def model_post_init(self, __context) -> None:
-        # Attach human-readable label after construction
         object.__setattr__(self, "rating_label", RATING_LABELS.get(self.rating, ""))
 
 
 class FeedbackListResponse(BaseModel):
-    total:  int
-    skip:   int
-    limit:  int
-    data:   list[FeedbackResponse]
+    total: int
+    skip:  int
+    limit: int
+    data:  list[FeedbackResponse]
 
 
 class SearchResponse(BaseModel):
@@ -88,19 +131,11 @@ class SearchResponse(BaseModel):
     data:  list[FeedbackResponse]
 
 
-# ─── Dashboard schema ─────────────────────────────────────────
-class RatingDistribution(BaseModel):
-    one:   int = Field(alias="1")
-    two:   int = Field(alias="2")
-    three: int = Field(alias="3")
-    four:  int = Field(alias="4")
-    five:  int = Field(alias="5")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
+# ─── Dashboard schemas ────────────────────────────────────────
 class DashboardStats(BaseModel):
-    total_feedback:      int
-    average_rating:      float
-    rating_distribution: dict[str, int]
-    recent_feedback:     list[FeedbackResponse]
+    total_feedback:       int
+    average_rating:       float
+    recommend_percentage: float
+    rating_distribution:  dict[str, int]
+    category_distribution: dict[str, int]
+    recent_feedback:      list[FeedbackResponse]
