@@ -31,15 +31,16 @@ const DarkTooltip = ({ active, payload, label, labelMap }) => {
 }
 
 export default function Dashboard() {
-  const [stats, setStats]           = useState(null)
-  const [loading, setLoading]       = useState(true)
+  const [stats, setStats]             = useState(null)
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(false)
   const [chartsReady, setChartsReady] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
     dashboardApi.getStats()
       .then(r => setStats(r.data))
-      .catch(console.error)
+      .catch(() => setError(true))
       .finally(() => setLoading(false))
   }, [])
 
@@ -53,7 +54,24 @@ export default function Dashboard() {
   }, [stats])
 
   if (loading) return <LoadingSpinner text="Loading dashboard..." />
-  if (!stats)  return <div className="text-center py-24 text-slate-500">Failed to load dashboard.</div>
+  if (error || !stats) return (
+    <div className="flex flex-col items-center justify-center py-32 text-center">
+      <div className="text-6xl mb-4">⚠️</div>
+      <h2 className="text-xl font-bold text-slate-700">Unable to load dashboard</h2>
+      <p className="text-slate-400 mt-2 max-w-sm text-sm">
+        The backend server is not responding. Make sure uvicorn is running on port 8000.
+      </p>
+      <code className="mt-3 text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg">
+        uvicorn main:app --reload
+      </code>
+      <button
+        onClick={() => { setError(false); setLoading(true); dashboardApi.getStats().then(r => setStats(r.data)).catch(() => setError(true)).finally(() => setLoading(false)) }}
+        className="btn-primary mt-5 text-sm"
+      >
+        Retry
+      </button>
+    </div>
+  )
 
   const ratingData = Object.entries(stats.rating_distribution).map(([k, v]) => ({
     rating: Number(k), count: v,
